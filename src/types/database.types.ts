@@ -121,6 +121,63 @@ export type Database = {
           },
         ]
       }
+      documents: {
+        Row: {
+          case_id: string
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          file_name: string
+          file_size: number
+          id: string
+          mime_type: string
+          practice_id: string
+          storage_path: string
+          uploaded_by: string
+        }
+        Insert: {
+          case_id: string
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          file_name: string
+          file_size: number
+          id?: string
+          mime_type: string
+          practice_id: string
+          storage_path: string
+          uploaded_by: string
+        }
+        Update: {
+          case_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          file_name?: string
+          file_size?: number
+          id?: string
+          mime_type?: string
+          practice_id?: string
+          storage_path?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_case_id_practice_id_fkey"
+            columns: ["case_id", "practice_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id", "practice_id"]
+          },
+          {
+            foreignKeyName: "documents_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       follow_ups: {
         Row: {
           case_id: string
@@ -317,6 +374,37 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_read_case_document: {
+        Args: { object_name: string }
+        Returns: boolean
+      }
+      can_remove_case_document_orphan: {
+        Args: { object_name: string }
+        Returns: boolean
+      }
+      can_upload_case_document_path: {
+        Args: { object_name: string }
+        Returns: boolean
+      }
+      check_case_document_upload: {
+        Args: { incoming_file_size: number; target_case_id: string }
+        Returns: {
+          active_case_documents: number
+          active_practice_bytes: number
+        }[]
+      }
+      create_case_document: {
+        Args: {
+          document_description?: string
+          document_id: string
+          object_path: string
+          target_case_id: string
+          uploaded_file_name: string
+          uploaded_file_size: number
+          uploaded_mime_type: string
+        }
+        Returns: string
+      }
       create_case_with_client: {
         Args: {
           case_number: string
@@ -337,6 +425,13 @@ export type Database = {
         Args: { practice_name: string }
         Returns: string
       }
+      get_case_document_usage: {
+        Args: { target_case_id: string }
+        Returns: {
+          active_case_documents: number
+          active_practice_bytes: number
+        }[]
+      }
       is_practice_creator: {
         Args: { target_practice_id: string }
         Returns: boolean
@@ -355,6 +450,10 @@ export type Database = {
           scheduled_time?: string
           target_case_id: string
         }
+        Returns: string
+      }
+      trash_case_document: {
+        Args: { target_case_id: string; target_document_id: string }
         Returns: string
       }
     }

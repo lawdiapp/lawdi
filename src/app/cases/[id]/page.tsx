@@ -4,20 +4,30 @@ import {
   CheckSquare2,
   CircleCheckBig,
   Clock3,
+  Download,
+  ExternalLink,
   FileText,
   History,
   Mail,
   MapPin,
   Plus,
   Phone,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { moveCaseDocumentToTrash } from "@/app/cases/[id]/documents/actions";
 import { completeFollowUp } from "@/app/cases/[id]/follow-ups/actions";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { formatDate, formatDateTimeInIndia, formatTime } from "@/lib/dates";
+import {
+  documentTypeLabel,
+  formatFileSize,
+  MAX_CASE_DOCUMENTS,
+  MAX_PRACTICE_DOCUMENT_BYTES,
+} from "@/lib/documents";
 import { sortHearingsNewestFirst } from "@/lib/hearings";
 import { getCurrentPractice } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
@@ -37,7 +47,11 @@ export default async function CaseCommandCenterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ hearing?: string; followUp?: string }>;
+  searchParams: Promise<{
+    hearing?: string;
+    followUp?: string;
+    document?: string;
+  }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -105,6 +119,19 @@ export default async function CaseCommandCenterPage({
   const completedFollowUps = completedFollowUpsResult.data ?? [];
   const followUpsError =
     pendingFollowUpsResult.error || completedFollowUpsResult.error;
+  const [documentsResult, documentUsageResult] = await Promise.all([
+    supabase
+      .from("documents")
+      .select("id, file_name, mime_type, file_size, description, created_at")
+      .eq("case_id", id)
+      .eq("practice_id", practice.id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false }),
+    supabase.rpc("get_case_document_usage", { target_case_id: id }),
+  ]);
+  const documents = documentsResult.data ?? [];
+  const documentUsage = documentUsageResult.data?.[0];
+  const documentsError = documentsResult.error || documentUsageResult.error;
 
   return (
     <main className="min-h-svh w-full overflow-x-hidden bg-muted/40">
@@ -153,6 +180,21 @@ export default async function CaseCommandCenterPage({
         {query.followUp === "complete-error" ? (
           <div role="alert" className="mb-4 rounded-lg border bg-background px-3 py-2.5 text-sm text-destructive">
             We could not complete that follow-up. Refresh and try again.
+          </div>
+        ) : null}
+        {query.document === "uploaded" || query.document === "trashed" ? (
+          <div role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+            <CircleCheckBig className="size-4 shrink-0" aria-hidden="true" />
+            <p className="font-medium">
+              {query.document === "uploaded"
+                ? "Document uploaded"
+                : "Document moved to Trash"}
+            </p>
+          </div>
+        ) : null}
+        {query.document === "trash-error" ? (
+          <div role="alert" className="mb-4 rounded-lg border bg-background px-3 py-2.5 text-sm text-destructive">
+            We could not move that document to Trash. Refresh and try again.
           </div>
         ) : null}
         <div className="flex min-w-0 flex-col gap-3 border-b pb-5">
@@ -358,6 +400,100 @@ export default async function CaseCommandCenterPage({
               ) : null}
             </section>
 
+            <section className="overflow-hidden rounded-xl border bg-background shadow-sm" aria-labelledby="documents-heading">
+              <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-5">
+                <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+                <div className="min-w-0">
+                  <h2 id="documents-heading" className="font-semibold tracking-tight">Documents</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {documents.length} of {MAX_CASE_DOCUMENTS} files
+                  </p>
+                </div>
+                <Link
+                  href={`/cases/${id}/documents/new`}
+                  scroll={false}
+                  className="ml-auto inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Upload Document
+                </Link>
+              </div>
+
+              <div className="grid gap-2 border-b bg-muted/20 px-4 py-3 text-xs text-muted-foreground sm:grid-cols-2 sm:px-5">
+                <p>
+                  Case: <span className="font-medium text-foreground">{documentUsage?.active_case_documents ?? documents.length} of {MAX_CASE_DOCUMENTS} files</span>
+                </p>
+                <p>
+                  Practice: <span className="font-medium text-foreground">{documentUsage ? formatFileSize(documentUsage.active_practice_bytes) : "Unavailable"} of {formatFileSize(MAX_PRACTICE_DOCUMENT_BYTES)}</span>
+                </p>
+              </div>
+
+              {documentsError ? (
+                <p role="alert" className="px-4 py-4 text-sm text-muted-foreground sm:px-5">
+                  We could not load this case’s documents.
+                </p>
+              ) : documents.length ? (
+                <ul className="divide-y">
+                  {documents.map((document) => (
+                    <li key={document.id} className="flex min-w-0 flex-col gap-3 px-4 py-3 sm:px-5">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                          <FileText className="size-4" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="break-all text-sm font-medium">{document.file_name}</p>
+                          <p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                            <span>{documentTypeLabel(document.mime_type)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{formatFileSize(document.file_size)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{formatDateTimeInIndia(document.created_at)}</span>
+                          </p>
+                          {document.description ? (
+                            <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-5 text-muted-foreground">
+                              {document.description}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pl-12">
+                        <Link
+                          href={`/cases/${id}/documents/${document.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors hover:bg-muted"
+                        >
+                          <ExternalLink className="size-3.5" aria-hidden="true" />
+                          Open
+                        </Link>
+                        <Link
+                          href={`/cases/${id}/documents/${document.id}?download=1`}
+                          className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors hover:bg-muted"
+                        >
+                          <Download className="size-3.5" aria-hidden="true" />
+                          Download
+                        </Link>
+                        <form action={moveCaseDocumentToTrash.bind(null, id, document.id)}>
+                          <button
+                            type="submit"
+                            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                          >
+                            <Trash2 className="size-3.5" aria-hidden="true" />
+                            Move to Trash
+                          </button>
+                        </form>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
+                  <p>No documents uploaded yet.</p>
+                  <p className="mt-1 text-xs">Add a PDF or case image when it is ready.</p>
+                </div>
+              )}
+            </section>
+
             <Card className="gap-5 py-6 shadow-sm">
               <CardHeader className="px-5 sm:px-6">
                 <h2 className="text-lg font-semibold tracking-tight">Notes</h2>
@@ -411,7 +547,7 @@ export default async function CaseCommandCenterPage({
               <Card className="gap-3 py-5 shadow-sm">
                 <CardContent className="px-4">
                   <FileText className="size-5 text-muted-foreground" aria-hidden="true" />
-                  <p className="mt-4 text-2xl font-semibold">0</p>
+                  <p className="mt-4 text-2xl font-semibold">{documents.length}</p>
                   <p className="mt-1 text-sm text-muted-foreground">Documents</p>
                 </CardContent>
               </Card>
