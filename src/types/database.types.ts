@@ -121,6 +121,60 @@ export type Database = {
           },
         ]
       }
+      follow_ups: {
+        Row: {
+          case_id: string
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          due_date: string | null
+          id: string
+          practice_id: string
+          reminder_at: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          due_date?: string | null
+          id?: string
+          practice_id: string
+          reminder_at?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          due_date?: string | null
+          id?: string
+          practice_id?: string
+          reminder_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_ups_case_id_practice_id_fkey"
+            columns: ["case_id", "practice_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id", "practice_id"]
+          },
+          {
+            foreignKeyName: "follow_ups_practice_id_fkey"
+            columns: ["practice_id"]
+            isOneToOne: false
+            referencedRelation: "practices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hearings: {
         Row: {
           case_id: string

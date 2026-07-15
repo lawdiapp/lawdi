@@ -15,8 +15,9 @@ import {
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { completeFollowUp } from "@/app/cases/[id]/follow-ups/actions";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { formatDate, formatTime } from "@/lib/dates";
+import { formatDate, formatDateTimeInIndia, formatTime } from "@/lib/dates";
 import { sortHearingsNewestFirst } from "@/lib/hearings";
 import { getCurrentPractice } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
@@ -36,7 +37,7 @@ export default async function CaseCommandCenterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ hearing?: string }>;
+  searchParams: Promise<{ hearing?: string; followUp?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -82,6 +83,28 @@ export default async function CaseCommandCenterPage({
   const hearings = sortHearingsNewestFirst(hearingRows ?? []);
   const latestHearing = hearings[0];
   const hasNextHearing = Boolean(latestHearing?.next_hearing_date);
+  const [pendingFollowUpsResult, completedFollowUpsResult] = await Promise.all([
+    supabase
+      .from("follow_ups")
+      .select("id, title, due_date, reminder_at, completed_at, created_at")
+      .eq("case_id", id)
+      .eq("practice_id", practice.id)
+      .is("completed_at", null)
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("follow_ups")
+      .select("id, title, due_date, reminder_at, completed_at, created_at")
+      .eq("case_id", id)
+      .eq("practice_id", practice.id)
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(5),
+  ]);
+  const pendingFollowUps = pendingFollowUpsResult.data ?? [];
+  const completedFollowUps = completedFollowUpsResult.data ?? [];
+  const followUpsError =
+    pendingFollowUpsResult.error || completedFollowUpsResult.error;
 
   return (
     <main className="min-h-svh w-full overflow-x-hidden bg-muted/40">
@@ -115,6 +138,21 @@ export default async function CaseCommandCenterPage({
         {query.hearing === "load-error" ? (
           <div role="alert" className="mb-6 rounded-xl border bg-background p-4 text-sm text-destructive">
             We could not load the hearing diary. Please refresh and try again.
+          </div>
+        ) : null}
+        {query.followUp === "created" || query.followUp === "completed" ? (
+          <div role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+            <CircleCheckBig className="size-4 shrink-0" aria-hidden="true" />
+            <p className="font-medium">
+              {query.followUp === "created"
+                ? "Follow-up added"
+                : "Follow-up completed"}
+            </p>
+          </div>
+        ) : null}
+        {query.followUp === "complete-error" ? (
+          <div role="alert" className="mb-4 rounded-lg border bg-background px-3 py-2.5 text-sm text-destructive">
+            We could not complete that follow-up. Refresh and try again.
           </div>
         ) : null}
         <div className="flex min-w-0 flex-col gap-3 border-b pb-5">
@@ -246,6 +284,80 @@ export default async function CaseCommandCenterPage({
               )}
             </section>
 
+            <section className="overflow-hidden rounded-xl border bg-background shadow-sm" aria-labelledby="follow-ups-heading">
+              <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-5">
+                <CheckSquare2 className="size-4 text-muted-foreground" aria-hidden="true" />
+                <div className="min-w-0">
+                  <h2 id="follow-ups-heading" className="font-semibold tracking-tight">Follow-ups</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {pendingFollowUps.length} pending
+                  </p>
+                </div>
+                <Link
+                  href={`/cases/${id}/follow-ups/new`}
+                  scroll={false}
+                  className="ml-auto inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted"
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Add Follow-up
+                </Link>
+              </div>
+
+              {followUpsError ? (
+                <p role="alert" className="px-4 py-4 text-sm text-muted-foreground sm:px-5">
+                  We could not load this case’s follow-ups.
+                </p>
+              ) : pendingFollowUps.length ? (
+                <ul className="divide-y">
+                  {pendingFollowUps.map((followUp) => (
+                    <li key={followUp.id} className="flex min-w-0 flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-medium">{followUp.title}</p>
+                        <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          {followUp.due_date ? (
+                            <span>Due {formatDate(followUp.due_date)}</span>
+                          ) : null}
+                          {followUp.reminder_at ? (
+                            <span>Reminder {formatDateTimeInIndia(followUp.reminder_at)}</span>
+                          ) : null}
+                          {!followUp.due_date && !followUp.reminder_at ? (
+                            <span>No date set</span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <form action={completeFollowUp.bind(null, id, followUp.id)}>
+                        <button
+                          type="submit"
+                          className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors hover:bg-muted sm:w-auto"
+                        >
+                          <CircleCheckBig className="size-4" aria-hidden="true" />
+                          Complete
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">
+                  No pending follow-ups.
+                </p>
+              )}
+
+              {!followUpsError && completedFollowUps.length ? (
+                <div className="border-t bg-muted/20 px-4 py-3 sm:px-5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Completed</p>
+                  <ul className="mt-2 divide-y">
+                    {completedFollowUps.map((followUp) => (
+                      <li key={followUp.id} className="flex items-start gap-2 py-2 text-sm first:pt-0 last:pb-0">
+                        <CircleCheckBig className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                        <span className="min-w-0 break-words text-muted-foreground line-through">{followUp.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+
             <Card className="gap-5 py-6 shadow-sm">
               <CardHeader className="px-5 sm:px-6">
                 <h2 className="text-lg font-semibold tracking-tight">Notes</h2>
@@ -306,8 +418,8 @@ export default async function CaseCommandCenterPage({
               <Card className="gap-3 py-5 shadow-sm">
                 <CardContent className="px-4">
                   <CheckSquare2 className="size-5 text-muted-foreground" aria-hidden="true" />
-                  <p className="mt-4 text-2xl font-semibold">0</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Open tasks</p>
+                  <p className="mt-4 text-2xl font-semibold">{pendingFollowUps.length}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Pending follow-ups</p>
                 </CardContent>
               </Card>
             </div>

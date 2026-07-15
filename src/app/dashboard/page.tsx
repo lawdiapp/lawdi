@@ -1,4 +1,4 @@
-import { ArrowRight, BriefcaseBusiness, CalendarDays, Clock3, Plus, Scale } from "lucide-react";
+import { ArrowRight, Bell, BriefcaseBusiness, CalendarDays, Clock3, Plus, Scale } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -10,10 +10,16 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
-import { addDays, formatDate, formatTime, getIndiaDateString } from "@/lib/dates";
+import { addDays, formatDate, formatDateTimeInIndia, formatTime, getIndiaDateString } from "@/lib/dates";
 import { getLatestHearingsByCase, type HearingDiaryRow } from "@/lib/hearings";
 import { getCurrentPractice } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/types/database.types";
+
+type FollowUpSummary = Pick<
+  Database["public"]["Tables"]["follow_ups"]["Row"],
+  "id" | "case_id" | "title" | "due_date" | "reminder_at"
+>;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -39,7 +45,13 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(3);
 
-  const [{ data: hearingRows }, { data: allCases }] = await Promise.all([
+  const today = getIndiaDateString();
+  const upcomingEnd = addDays(today, 7);
+  const [
+    { data: hearingRows },
+    { data: allCases },
+    { data: followUpRows },
+  ] = await Promise.all([
     supabase
       .from("hearings")
       .select("id, case_id, hearing_date, hearing_time, notes, next_hearing_date, next_hearing_time, created_at")
@@ -48,11 +60,17 @@ export default async function DashboardPage() {
       .from("cases")
       .select("id, title, case_number")
       .eq("practice_id", practice.id),
+    supabase
+      .from("follow_ups")
+      .select("id, case_id, title, due_date, reminder_at")
+      .eq("practice_id", practice.id)
+      .is("completed_at", null)
+      .not("due_date", "is", null)
+      .lte("due_date", upcomingEnd)
+      .order("due_date", { ascending: true }),
   ]);
   const latestHearings = getLatestHearingsByCase(hearingRows ?? []);
   const caseDetails = new Map((allCases ?? []).map((item) => [item.id, item]));
-  const today = getIndiaDateString();
-  const upcomingEnd = addDays(today, 7);
   const scheduledHearings = Array.from(latestHearings.values())
     .filter((hearing) => {
       const nextDate = hearing.next_hearing_date;
@@ -68,6 +86,19 @@ export default async function DashboardPage() {
   );
   const upcomingHearings = scheduledHearings.filter(
     (hearing) => hearing.next_hearing_date && hearing.next_hearing_date > today,
+  );
+  const datedFollowUps = (followUpRows ?? []) as FollowUpSummary[];
+  const overdueFollowUps = datedFollowUps.filter(
+    (followUp) => followUp.due_date && followUp.due_date < today,
+  );
+  const todaysFollowUps = datedFollowUps.filter(
+    (followUp) => followUp.due_date === today,
+  );
+  const upcomingFollowUps = datedFollowUps.filter(
+    (followUp) =>
+      followUp.due_date &&
+      followUp.due_date > today &&
+      followUp.due_date <= upcomingEnd,
   );
 
   return (
@@ -152,6 +183,39 @@ export default async function DashboardPage() {
               />
             </section>
 
+            <section className="mt-8 border-t pt-6" aria-labelledby="dashboard-follow-ups-heading">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 id="dashboard-follow-ups-heading" className="font-semibold tracking-tight">Follow-ups</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Next actions by due date.</p>
+                </div>
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                  <Bell className="size-5" aria-hidden="true" />
+                </span>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                <FollowUpSchedule
+                  title="Overdue"
+                  followUps={overdueFollowUps}
+                  cases={caseDetails}
+                  emptyMessage="No overdue follow-ups."
+                  tone="urgent"
+                />
+                <FollowUpSchedule
+                  title="Due today"
+                  followUps={todaysFollowUps}
+                  cases={caseDetails}
+                  emptyMessage="No follow-ups due today."
+                />
+                <FollowUpSchedule
+                  title="Next 7 days"
+                  followUps={upcomingFollowUps}
+                  cases={caseDetails}
+                  emptyMessage="No follow-ups due in the next 7 days."
+                />
+              </div>
+            </section>
+
             <section className="mt-8 border-t pt-6" aria-labelledby="recent-cases-heading">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -195,6 +259,57 @@ export default async function DashboardPage() {
         </Card>
       </div>
     </main>
+  );
+}
+
+function FollowUpSchedule({
+  title,
+  followUps,
+  cases,
+  emptyMessage,
+  tone = "default",
+}: {
+  title: string;
+  followUps: FollowUpSummary[];
+  cases: Map<string, { id: string; title: string; case_number: string }>;
+  emptyMessage: string;
+  tone?: "default" | "urgent";
+}) {
+  return (
+    <div className="rounded-xl border bg-background p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+        <span className={tone === "urgent" && followUps.length ? "rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive" : "rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"}>
+          {followUps.length}
+        </span>
+      </div>
+      {followUps.length ? (
+        <ul className="mt-3 divide-y">
+          {followUps.map((followUp) => {
+            const caseRecord = cases.get(followUp.case_id);
+            if (!caseRecord || !followUp.due_date) return null;
+
+            return (
+              <li key={followUp.id} className="py-2.5 first:pt-0 last:pb-0">
+                <Link href={`/cases/${followUp.case_id}`} className="group block min-w-0">
+                  <span className="block break-words text-sm font-medium group-hover:underline">{followUp.title}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {formatDate(followUp.due_date)} · {caseRecord.title}
+                  </span>
+                  {followUp.reminder_at ? (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Reminder {formatDateTimeInIndia(followUp.reminder_at)}
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
+      )}
+    </div>
   );
 }
 
