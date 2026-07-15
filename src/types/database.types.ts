@@ -260,6 +260,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_practice_with_owner: {
+        Args: { practice_name: string }
+        Returns: string
+      }
       is_practice_creator: {
         Args: { target_practice_id: string }
         Returns: boolean

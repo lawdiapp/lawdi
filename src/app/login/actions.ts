@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { getAuthenticatedDestination } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthActionState = {
@@ -47,11 +48,18 @@ export async function login(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (error) {
     return { error: safeLoginError(error.message) };
   }
 
-  redirect("/dashboard");
+  const destination = await getAuthenticatedDestination(
+    supabase,
+    data.user.id,
+  );
+  redirect(destination);
 }

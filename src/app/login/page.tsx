@@ -9,6 +9,7 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
+import { getAuthenticatedDestination } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
 
 type LoginPageProps = {
@@ -19,8 +20,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
 
-  if (data?.claims) {
-    redirect("/dashboard");
+  if (data?.claims?.sub) {
+    const destination = await getAuthenticatedDestination(
+      supabase,
+      data.claims.sub,
+    );
+    redirect(destination);
   }
 
   const { error } = await searchParams;

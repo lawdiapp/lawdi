@@ -9,14 +9,21 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
+import { getCurrentPractice } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
-  if (error || !data?.claims) {
+  if (error || !data?.claims?.sub) {
     redirect("/login");
+  }
+
+  const practice = await getCurrentPractice(supabase, data.claims.sub);
+
+  if (!practice) {
+    redirect("/onboarding");
   }
 
   const email =
@@ -59,9 +66,15 @@ export default async function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="px-6 sm:px-9">
-            <div className="rounded-xl border bg-muted/40 p-4 sm:p-5">
-              <p className="text-sm text-muted-foreground">Signed in as</p>
-              <p className="mt-1 break-all font-medium">{email}</p>
+            <div className="grid gap-4 rounded-xl border bg-muted/40 p-4 sm:grid-cols-2 sm:p-5">
+              <div>
+                <p className="text-sm text-muted-foreground">Practice</p>
+                <p className="mt-1 font-medium">{practice.name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Your role</p>
+                <p className="mt-1 font-medium capitalize">{practice.role}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
