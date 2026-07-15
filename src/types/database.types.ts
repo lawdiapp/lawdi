@@ -260,6 +260,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_case_with_client: {
+        Args: {
+          case_number: string
+          case_title: string
+          case_type?: string
+          cnr_number?: string
+          court_name: string
+          existing_client_id?: string
+          filing_date?: string
+          new_client_email?: string
+          new_client_name?: string
+          new_client_phone?: string
+          notes?: string
+        }
+        Returns: string
+      }
       create_practice_with_owner: {
         Args: { practice_name: string }
         Returns: string
