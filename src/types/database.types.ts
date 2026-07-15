@@ -130,6 +130,7 @@ export type Database = {
           hearing_time: string | null
           id: string
           next_hearing_date: string | null
+          next_hearing_time: string | null
           notes: string | null
           outcome: string | null
           practice_id: string
@@ -144,6 +145,7 @@ export type Database = {
           hearing_time?: string | null
           id?: string
           next_hearing_date?: string | null
+          next_hearing_time?: string | null
           notes?: string | null
           outcome?: string | null
           practice_id: string
@@ -158,6 +160,7 @@ export type Database = {
           hearing_time?: string | null
           id?: string
           next_hearing_date?: string | null
+          next_hearing_time?: string | null
           notes?: string | null
           outcome?: string | null
           practice_id?: string
@@ -291,6 +294,14 @@ export type Database = {
       is_practice_owner: {
         Args: { target_practice_id: string }
         Returns: boolean
+      }
+      set_next_hearing: {
+        Args: {
+          scheduled_date: string
+          scheduled_time?: string
+          target_case_id: string
+        }
+        Returns: string
       }
     }
     Enums: {

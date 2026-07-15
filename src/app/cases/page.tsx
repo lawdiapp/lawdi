@@ -1,8 +1,10 @@
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, CalendarDays, Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { formatDate, formatTime } from "@/lib/dates";
+import { getLatestHearingsByCase } from "@/lib/hearings";
 import { getCurrentPractice } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
 
@@ -38,6 +40,11 @@ export default async function CasesPage() {
         .in("id", clientIds)
     : { data: [] };
   const clientNames = new Map((clients ?? []).map((client) => [client.id, client.name]));
+  const { data: hearingRows } = await supabase
+    .from("hearings")
+    .select("id, case_id, hearing_date, hearing_time, notes, next_hearing_date, next_hearing_time, created_at")
+    .eq("practice_id", practice.id);
+  const latestHearings = getLatestHearingsByCase(hearingRows ?? []);
 
   return (
     <main className="min-h-svh w-full overflow-x-hidden bg-muted/40">
@@ -96,6 +103,17 @@ export default async function CasesPage() {
                         <p className="mt-1 break-words text-sm font-medium">
                           {item.client_id ? clientNames.get(item.client_id) ?? "Client unavailable" : "No client"}
                         </p>
+                        {latestHearings.get(item.id)?.next_hearing_date ? (
+                          <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-primary">
+                            <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+                            <span className="font-medium">
+                              Next: {formatDate(latestHearings.get(item.id)!.next_hearing_date!)}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {formatTime(latestHearings.get(item.id)!.next_hearing_time) ?? "Time not set"}
+                            </span>
+                          </p>
+                        ) : null}
                       </div>
                       <span className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground group-hover:text-foreground">
                         Open case

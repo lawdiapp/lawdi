@@ -1,4 +1,4 @@
-import { ArrowRight, BriefcaseBusiness, Plus, Scale } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, CalendarDays, Clock3, Plus, Scale } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -10,6 +10,8 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
+import { addDays, formatDate, formatTime, getIndiaDateString } from "@/lib/dates";
+import { getLatestHearingsByCase, type HearingDiaryRow } from "@/lib/hearings";
 import { getCurrentPractice } from "@/lib/practice";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,6 +38,37 @@ export default async function DashboardPage() {
     .eq("practice_id", practice.id)
     .order("created_at", { ascending: false })
     .limit(3);
+
+  const [{ data: hearingRows }, { data: allCases }] = await Promise.all([
+    supabase
+      .from("hearings")
+      .select("id, case_id, hearing_date, hearing_time, notes, next_hearing_date, next_hearing_time, created_at")
+      .eq("practice_id", practice.id),
+    supabase
+      .from("cases")
+      .select("id, title, case_number")
+      .eq("practice_id", practice.id),
+  ]);
+  const latestHearings = getLatestHearingsByCase(hearingRows ?? []);
+  const caseDetails = new Map((allCases ?? []).map((item) => [item.id, item]));
+  const today = getIndiaDateString();
+  const upcomingEnd = addDays(today, 7);
+  const scheduledHearings = Array.from(latestHearings.values())
+    .filter((hearing) => {
+      const nextDate = hearing.next_hearing_date;
+      return nextDate && nextDate >= today && nextDate <= upcomingEnd;
+    })
+    .sort((left, right) => {
+      const leftSchedule = `${left.next_hearing_date}T${left.next_hearing_time ?? "23:59:59"}`;
+      const rightSchedule = `${right.next_hearing_date}T${right.next_hearing_time ?? "23:59:59"}`;
+      return leftSchedule.localeCompare(rightSchedule);
+    });
+  const todaysHearings = scheduledHearings.filter(
+    (hearing) => hearing.next_hearing_date === today,
+  );
+  const upcomingHearings = scheduledHearings.filter(
+    (hearing) => hearing.next_hearing_date && hearing.next_hearing_date > today,
+  );
 
   return (
     <main className="min-h-svh w-full bg-muted/40">
@@ -102,6 +135,23 @@ export default async function DashboardPage() {
               </Link>
             </div>
 
+            <section className="mt-8 grid gap-4 border-t pt-6 lg:grid-cols-2" aria-label="Hearing schedule">
+              <HearingSchedule
+                title="Today’s hearings"
+                description={formatDate(today)}
+                hearings={todaysHearings}
+                cases={caseDetails}
+                emptyMessage="No hearings scheduled for today."
+              />
+              <HearingSchedule
+                title="Upcoming hearings"
+                description="Next 7 days"
+                hearings={upcomingHearings}
+                cases={caseDetails}
+                emptyMessage="No hearings scheduled in the next 7 days."
+              />
+            </section>
+
             <section className="mt-8 border-t pt-6" aria-labelledby="recent-cases-heading">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -145,5 +195,64 @@ export default async function DashboardPage() {
         </Card>
       </div>
     </main>
+  );
+}
+
+function HearingSchedule({
+  title,
+  description,
+  hearings,
+  cases,
+  emptyMessage,
+}: {
+  title: string;
+  description: string;
+  hearings: HearingDiaryRow[];
+  cases: Map<string, { id: string; title: string; case_number: string }>;
+  emptyMessage: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-background p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold tracking-tight">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+          <CalendarDays className="size-5" aria-hidden="true" />
+        </span>
+      </div>
+
+      {hearings.length ? (
+        <div className="mt-4 space-y-2">
+          {hearings.map((hearing) => {
+            const caseRecord = cases.get(hearing.case_id);
+            if (!caseRecord || !hearing.next_hearing_date) return null;
+
+            return (
+              <Link
+                key={hearing.id}
+                href={`/cases/${hearing.case_id}`}
+                className="group block min-w-0 rounded-lg border p-3 transition-colors hover:bg-muted/50"
+              >
+                <span className="block break-words text-sm font-medium">{caseRecord.title}</span>
+                <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span>{formatDate(hearing.next_hearing_date)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock3 className="size-3.5" aria-hidden="true" />
+                    {formatTime(hearing.next_hearing_time) ?? "Time not set"}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>{caseRecord.case_number}</span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-lg bg-muted/40 p-3 text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
+      )}
+    </div>
   );
 }
