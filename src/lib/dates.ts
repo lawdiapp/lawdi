@@ -33,6 +33,20 @@ export function addDays(value: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+export function formatDateShort(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+export function daysBetween(from: string, to: string) {
+  const fromDate = new Date(`${from}T00:00:00Z`);
+  const toDate = new Date(`${to}T00:00:00Z`);
+  return Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000);
+}
+
 export function formatDateTimeInIndia(value: string) {
   return new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
